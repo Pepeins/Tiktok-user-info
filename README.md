@@ -15,5 +15,24 @@ Welcome to **TikTok User Info Fetcher**! This is a Python script that allows you
 
 Before running the script, make sure you have Python 3.x installed, along with the required libraries.
 
-```bash
-pip install requests beautifulsoup4 fade
+## Sample output
+
+TikTok User Information:
+Username: John_Doe
+Nickname: John Doe
+User ID: 1234567890
+Description: Just a regular TikTok user.
+Creation Date: 15-08-2020 at 14:30:00
+Region: US
+Language: en
+Friends: 100
+Followers: 5000
+Following: 50
+Hearts: 100000
+Videos: 20
+Verified: False
+Private Account: False
+Open favorite: True
+
+
+
