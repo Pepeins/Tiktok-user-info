@@ -33,6 +33,10 @@ def get_tiktok_user_info(username) -> dict:
     
     try:
         response = requests.get(url, headers=headers, timeout=10) 
+        
+        if response.status_code == 404:
+            return {"banned": True}
+
         response.raise_for_status()  
         
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -40,7 +44,7 @@ def get_tiktok_user_info(username) -> dict:
         
         if script:
             data:dict = json.loads(script.text)['__DEFAULT_SCOPE__']['webapp.user-detail']
-            return data.get('userInfo')
+            return {"banned": False, "userInfo": data.get('userInfo')}
         else:
             Slow(fade.water("Error: No data found in the response."))
             return None
@@ -54,7 +58,6 @@ def get_own_username():
     return user_name
 
 def calculate_engagement_rate(stats):
-    """Calcula la tasa de interacción del usuario."""
     likes = stats.get("heartCount", 0)
     followers = stats.get("followerCount", 0)
     if followers == 0:
@@ -62,7 +65,6 @@ def calculate_engagement_rate(stats):
     return (likes / followers) * 100
 
 def print_menu():
-    """Imprime un menú con las opciones disponibles."""
     print(fade.water(ascii_art))
     print(fade.water("Welcome to the TikTok User Info Tool!"))
     print(fade.water("Select an option:"))
@@ -71,7 +73,6 @@ def print_menu():
     print(fade.water("3. Exit"))
 
 def print_user_info(user_data, stats):
-    """Muestra la información del usuario de forma estructurada y atractiva."""
     Slow(fade.water(f"Username: {user_data.get('uniqueId')}"))
     Slow(fade.water(f"Nickname: {user_data.get('nickname')}"))
     Slow(fade.water(f"User ID: {user_data.get('id')}"))
@@ -117,13 +118,15 @@ def main():
         
         if data is None:
             Slow(fade.water(f"Error: No user found with the username '{username}'."))  
+        elif data.get("banned"):
+            Slow(fade.water(f"The user '{username}' is banned or the profile does not exist."))
         else:
-            user_data = data.get('user', {})
-            stats = data.get('stats', {})
+            user_data = data.get('userInfo', {}).get('user', {})
+            stats = data.get('userInfo', {}).get('stats', {})
             Slow(fade.water("TikTok User Information:"))
             print_user_info(user_data, stats)
         
-        input(fade.water("[x] Press Enter to return to the menu..."))
+        input(fade.water("[x] Press enter to return to the menu..."))
 
 if __name__ == "__main__":
     main()
