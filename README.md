@@ -10,6 +10,7 @@ Welcome to **TikTok User Info**! This is a Python script that allows you to fetc
 - Get statistics like followers, friends, video count, and more.
 - Access profile details such as the username, nickname, region, and language.
 - Check if the profile is verified or private.
+- And many more options.
 
 ## Requirements
 
