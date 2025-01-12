@@ -2,7 +2,7 @@
 
 Welcome to **TikTok User Info**! This is a Python script that allows you to fetch information from TikTok profiles, such as the number of followers, videos, and other profile details.
 
-> **Important Notice:** Please use this script ethically and in accordance with TikTok's terms of service. The author is not responsible for any malicious use or violations of platform policies.
+> **Important:** Please use this script ethically and in accordance with TikTok's terms of service. The author is not responsible for any malicious use or violations of platform policies.
 
 ## Features
 
