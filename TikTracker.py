@@ -3,6 +3,7 @@ import fade
 import os
 import time
 import logging
+import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from dataclasses import dataclass
