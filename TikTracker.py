@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any
+import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +29,7 @@ LOGO_ART = """████████▀▀▀████
 ███▄▄▄▄▄███████ TikTracker"""
 
 HEADERS = {
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'accept-language': 'en-US,en;q=0.9',
     'sec-fetch-dest': 'document',
     'sec-fetch-mode': 'navigate',
@@ -149,16 +150,99 @@ class TikTokAPI:
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Metod 1: Using clasic metod
             script = soup.find('script', {'id': '__UNIVERSAL_DATA_FOR_REHYDRATION__'})
             
-            if not script:
-                logging.warning(f"Data structure not found for user: {username}")
-                return None
+            if script:
+                data = json.loads(script.text)
+                if '__DEFAULT_SCOPE__' in data and 'webapp.user-detail' in data['__DEFAULT_SCOPE__']:
+                    user_data = data['__DEFAULT_SCOPE__']['webapp.user-detail']['userInfo']
+                    logging.info(f"Successfully retrieved data using method 1 for user: {username}")
+                    return user_data
+            
+            # Method 2: Search all scripts to find JSON data that contains user information
+            for script in soup.find_all('script'):
+                if script.string:
+
+                    if '"userInfo":' in script.string or '"user":' in script.string:
+                        try:
+
+                            json_str = script.string.strip()
+
+                            if '=' in json_str:
+                                json_str = json_str.split('=', 1)[1].strip().rstrip(';')
+                            
+                            data = json.loads(json_str)
+                            
+                            if 'userInfo' in data:
+                                logging.info(f"Successfully retrieved data using method 2 for user: {username}")
+                                return data['userInfo']
+                            elif 'props' in data and 'pageProps' in data['props']:
+                                if 'userInfo' in data['props']['pageProps']:
+                                    logging.info(f"Successfully retrieved data using method 2-2 for user: {username}")
+                                    return data['props']['pageProps']['userInfo']
+                        except (json.JSONDecodeError, KeyError) as e:
+                            continue
+            
+            # Method 3: Use regex to extract user data
+            user_data_regex = re.search(r'"UserModule":({.*?}),"UserPage"', response.text)
+            if user_data_regex:
+                try:
+                    user_data_json = user_data_regex.group(1)
+                    user_data = json.loads('{' + user_data_json + '}')
+                    if 'users' in user_data and username in user_data['users']:
+                        user_info = {
+                            'user': user_data['users'][username],
+                            'stats': user_data['stats'][username]
+                        }
+                        logging.info(f"Successfully retrieved data using method 3 for user: {username}")
+                        return user_info
+                except (json.JSONDecodeError, KeyError) as e:
+                    logging.error(f"Error parsing regex data: {e}")
+            
+            # Method 4: Extract directly from meta tags
+            try:
+                meta_data = {
+                    'user': {
+                        'uniqueId': username,
+                        'nickname': soup.find('meta', property='og:title')['content'].split(' ') if soup.find('meta', property='og:title') else username,
+                        'id': '',
+                        'signature': soup.find('meta', property='og:description')['content'] if soup.find('meta', property='og:description') else '',
+                        'createTime': 0,
+                        'region': '',
+                        'language': '',
+                        'avatarLarger': soup.find('meta', property='og:image')['content'] if soup.find('meta', property='og:image') else '',
+                        'verified': False,
+                        'secret': False,
+                        'openFavorite': False
+                    },
+                    'stats': {
+                        'friendCount': 0,
+                        'followerCount': 0,
+                        'followingCount': 0,
+                        'heartCount': 0,
+                        'videoCount': 0
+                    }
+                }
+                follower_count_match = re.search(r'(\d+(\.\d+)?(K|M|B)?) Followers', response.text)
+                following_count_match = re.search(r'(\d+(\.\d+)?(K|M|B)?) Following', response.text)
+                likes_count_match = re.search(r'(\d+(\.\d+)?(K|M|B)?) Likes', response.text)
                 
-            data = json.loads(script.text)
-            user_data = data['__DEFAULT_SCOPE__']['webapp.user-detail']['userInfo']
-            logging.info(f"Successfully retrieved data for user: {username}")
-            return user_data
+                if follower_count_match:
+                    meta_data['stats']['followerCount'] = TikTokAPI._parse_count(follower_count_match.group(1))
+                if following_count_match:
+                    meta_data['stats']['followingCount'] = TikTokAPI._parse_count(following_count_match.group(1))
+                if likes_count_match:
+                    meta_data['stats']['heartCount'] = TikTokAPI._parse_count(likes_count_match.group(1))
+                
+                logging.info(f"Successfully retrieved data using method 4 for user: {username}")
+                return meta_data
+            except Exception as e:
+                logging.error(f"Error in method 4: {e}")
+            
+            logging.warning(f"Data structure not found for user: {username}")
+            return None
         except requests.exceptions.RequestException as e:
             logging.error(f"Network error while fetching user data: {e}")
         except (KeyError, TypeError, json.JSONDecodeError) as e:
@@ -168,19 +252,46 @@ class TikTokAPI:
         return None
     
     @staticmethod
+    def _parse_count(count_str: str) -> int:
+        """Convierte cadenas como '1.5M' o '300K' en números enteros"""
+        try:
+            if 'K' in count_str:
+                return int(float(count_str.replace('K', '')) * 1000)
+            elif 'M' in count_str:
+                return int(float(count_str.replace('M', '')) * 1000000)
+            elif 'B' in count_str:
+                return int(float(count_str.replace('B', '')) * 1000000000)
+            else:
+                return int(count_str.replace(',', ''))
+        except ValueError:
+            return 0
+    
+    @staticmethod
     def get_related_users(user_id: str) -> List[Dict]:
         try:
             logging.info(f"Fetching related users for ID: {user_id}")
             response = requests.get(
-                f'https://www.tiktok.com/node/share/discover?user_id={user_id}',
+                f'https://www.tiktok.com/api/recommend/user/related/?user_id={user_id}',
                 headers=HEADERS,
                 timeout=REQUEST_TIMEOUT
             )
+            
+            if response.status_code != 200:
+                response = requests.get(
+                    f'https://www.tiktok.com/node/share/discover?user_id={user_id}',
+                    headers=HEADERS,
+                    timeout=REQUEST_TIMEOUT
+                )
+            
             response.raise_for_status()
             data = response.json()
             
             if data and 'user_list' in data:
                 return data['user_list']
+            elif data and 'userInfoList' in data:
+                return data['userInfoList']
+            elif data and 'users' in data:
+                return data['users']
             logging.warning(f"No related users found for ID: {user_id}")
         except requests.exceptions.RequestException as e:
             logging.error(f"Network error while fetching related users: {e}")
@@ -202,19 +313,42 @@ class TikTokAPI:
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Note: Selectors may change over time as tiktok updates its UI / Nota: Los selectores pueden cambiar con el tiempo ya que tiktok actualiza su UI
-            user_cards = soup.select('div[data-e2e="user-card"]')
+            user_cards = soup.select('div[data-e2e="user-card"], .user-card, .follower-item')
             friends = []
             
             for card in user_cards:
-                username_elem = card.select_one('h3[data-e2e="user-username"]')
-                nickname_elem = card.select_one('h4[data-e2e="user-nickname"]')
+                username_elem = card.select_one('h3[data-e2e="user-username"], .user-username, .unique-id-text')
+                nickname_elem = card.select_one('h4[data-e2e="user-nickname"], .user-nickname, .nickname-text')
                 
                 if username_elem and nickname_elem:
                     friends.append({
                         'username': username_elem.text.strip('@'),
                         'nickname': nickname_elem.text.strip()
                     })
+
+                elif link_elem := card.select_one('a[href^="/@"]'):
+                    href = link_elem.get('href', '')
+                    if href:
+                        username = href.strip('/').strip('@')
+                        friends.append({
+                            'username': username,
+                            'nickname': link_elem.text.strip() or username
+                        })
+            
+            if not friends:
+                for script in soup.find_all('script'):
+                    if script.string and 'followingList' in script.string:
+                        try:
+                            match = re.search(r'"followingList":(\[.*?\])', script.string)
+                            if match:
+                                following_data = json.loads(match.group(1))
+                                for user in following_data:
+                                    friends.append({
+                                        'username': user.get('uniqueId', ''),
+                                        'nickname': user.get('nickname', '')
+                                    })
+                        except (json.JSONDecodeError, KeyError) as e:
+                            logging.error(f"Error parsing following list: {e}")
             
             logging.info(f"Found {len(friends)} friends for user: {username}")
             return friends
